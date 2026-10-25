@@ -91,53 +91,48 @@ export function App() {
   useEffect(() => {
     checkHealth();
 
+    const syncSessionsForUser = async (currentUser: any) => {
+      try {
+        const cloudSessions = await fetchUserSessionsFromCloud(currentUser.id);
+        const localSessions = storage.getSessions();
+        const cloudIds = new Set(cloudSessions.map((c) => c.id));
+        const unsynced = localSessions.filter((s) => !cloudIds.has(s.id));
+
+        if (unsynced.length > 0) {
+          for (const s of unsynced) {
+            await saveUserSessionToCloud(s, currentUser.id);
+          }
+          const updated = await fetchUserSessionsFromCloud(currentUser.id);
+          setSessions(updated);
+          setActiveSession((prev) => prev || updated[0]);
+        } else if (cloudSessions.length > 0) {
+          setSessions(cloudSessions);
+          setActiveSession((prev) => prev || cloudSessions[0]);
+        } else {
+          loadLocalSessions();
+        }
+      } catch (err) {
+        console.warn('Sync error:', err);
+        loadLocalSessions();
+      }
+    };
+
     // Check active Supabase auth session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       if (currentUser) {
-        const cloudSessions = await fetchUserSessionsFromCloud(currentUser.id);
-        if (cloudSessions.length > 0) {
-          setSessions(cloudSessions);
-          setActiveSession(cloudSessions[0]);
-        } else {
-          // If cloud has no sessions, check if local storage has sessions to migrate
-          const localSessions = storage.getSessions();
-          if (localSessions.length > 0) {
-            for (const s of localSessions) {
-              await saveUserSessionToCloud(s, currentUser.id);
-            }
-            const refreshed = await fetchUserSessionsFromCloud(currentUser.id);
-            setSessions(refreshed.length > 0 ? refreshed : localSessions);
-            setActiveSession(refreshed[0] || localSessions[0]);
-          } else {
-            loadLocalSessions();
-          }
-        }
+        syncSessionsForUser(currentUser);
       } else {
         loadLocalSessions();
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       if (currentUser) {
-        const cloudSessions = await fetchUserSessionsFromCloud(currentUser.id);
-        if (cloudSessions.length > 0) {
-          setSessions(cloudSessions);
-          setActiveSession(cloudSessions[0]);
-        } else {
-          const localSessions = storage.getSessions();
-          if (localSessions.length > 0) {
-            for (const s of localSessions) {
-              await saveUserSessionToCloud(s, currentUser.id);
-            }
-            const refreshed = await fetchUserSessionsFromCloud(currentUser.id);
-            setSessions(refreshed.length > 0 ? refreshed : localSessions);
-            setActiveSession(refreshed[0] || localSessions[0]);
-          }
-        }
+        syncSessionsForUser(currentUser);
       }
     });
 
