@@ -8,7 +8,19 @@ import {
   ChecklistItem
 } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+function getApiBase(): string {
+  let envUrl = (import.meta.env.VITE_API_URL || '').trim();
+  if (!envUrl) {
+    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      return 'http://localhost:8000';
+    }
+    return '';
+  }
+  // Remove trailing slashes and redundant /api if user added it
+  return envUrl.replace(/\/+$/, '').replace(/\/api$/, '');
+}
+
+const API_BASE = getApiBase();
 
 class ApiError extends Error {
   status: number;
@@ -32,15 +44,17 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
     if (!response.ok) {
       let errorMessage = `Request failed with status ${response.status}`;
+      if (response.status === 404) {
+        errorMessage = 'Backend API endpoint not found. Please verify VITE_API_URL in your Vercel project settings points to your live Render backend URL (e.g. https://your-backend.onrender.com).';
+      }
       try {
         const errorData = await response.json();
         if (errorData.detail) {
           errorMessage = typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail);
         }
       } catch {
-        // Fallback to text
         const text = await response.text();
-        if (text) errorMessage = text;
+        if (text && response.status !== 404) errorMessage = text;
       }
       throw new ApiError(errorMessage, response.status);
     }
@@ -48,7 +62,10 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     return await response.json() as T;
   } catch (err: any) {
     if (err instanceof ApiError) throw err;
-    throw new ApiError(err.message || 'Unable to connect to HirePilot AI backend service.', 0);
+    throw new ApiError(
+      err.message || 'Unable to connect to AI backend. If Render is waking up from sleep, please retry in ~30 seconds.',
+      0
+    );
   }
 }
 
@@ -58,6 +75,25 @@ export const api = {
   },
 
   parseResumeFile: async (file: File): Promise<ParsedResume> => {
+    // Fast path: plain text files can be read directly in-browser
+    if (file.name.endsWith('.txt')) {
+      try {
+        const text = await file.text();
+        const words = text.split(/\s+/).filter(Boolean);
+        return {
+          filename: file.name,
+          word_count: words.length,
+          detected_name: '',
+          email: '',
+          phone: '',
+          links: [],
+          text: text,
+        };
+      } catch (readErr) {
+        console.warn('In-browser text read failed, falling back to API:', readErr);
+      }
+    }
+
     const formData = new FormData();
     formData.append('file', file);
     return request<ParsedResume>('/api/parse-resume', {
