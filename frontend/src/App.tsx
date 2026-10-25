@@ -92,33 +92,52 @@ export function App() {
     checkHealth();
 
     // Check active Supabase auth session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       if (currentUser) {
-        fetchUserSessionsFromCloud(currentUser.id).then((cloudSessions) => {
-          if (cloudSessions.length > 0) {
-            setSessions(cloudSessions);
-            setActiveSession(cloudSessions[0]);
+        const cloudSessions = await fetchUserSessionsFromCloud(currentUser.id);
+        if (cloudSessions.length > 0) {
+          setSessions(cloudSessions);
+          setActiveSession(cloudSessions[0]);
+        } else {
+          // If cloud has no sessions, check if local storage has sessions to migrate
+          const localSessions = storage.getSessions();
+          if (localSessions.length > 0) {
+            for (const s of localSessions) {
+              await saveUserSessionToCloud(s, currentUser.id);
+            }
+            const refreshed = await fetchUserSessionsFromCloud(currentUser.id);
+            setSessions(refreshed.length > 0 ? refreshed : localSessions);
+            setActiveSession(refreshed[0] || localSessions[0]);
           } else {
             loadLocalSessions();
           }
-        });
+        }
       } else {
         loadLocalSessions();
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       if (currentUser) {
-        fetchUserSessionsFromCloud(currentUser.id).then((cloudSessions) => {
-          if (cloudSessions.length > 0) {
-            setSessions(cloudSessions);
-            setActiveSession(cloudSessions[0]);
+        const cloudSessions = await fetchUserSessionsFromCloud(currentUser.id);
+        if (cloudSessions.length > 0) {
+          setSessions(cloudSessions);
+          setActiveSession(cloudSessions[0]);
+        } else {
+          const localSessions = storage.getSessions();
+          if (localSessions.length > 0) {
+            for (const s of localSessions) {
+              await saveUserSessionToCloud(s, currentUser.id);
+            }
+            const refreshed = await fetchUserSessionsFromCloud(currentUser.id);
+            setSessions(refreshed.length > 0 ? refreshed : localSessions);
+            setActiveSession(refreshed[0] || localSessions[0]);
           }
-        });
+        }
       }
     });
 
