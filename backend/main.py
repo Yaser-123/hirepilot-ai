@@ -62,11 +62,11 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Enable CORS for frontend Vite dev server & production builds
+# Enable CORS for local dev and production deployments (Vercel, Render, Netlify, etc.)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -110,6 +110,15 @@ class ChecklistRequest(BaseModel):
 
 
 # --- Endpoints ---
+
+@app.get("/")
+async def root():
+    return {
+        "name": "HirePilot AI API",
+        "status": "online",
+        "version": "1.0.0",
+        "docs": "/docs"
+    }
 
 @app.get("/api/health")
 async def health_check():

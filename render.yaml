@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: hirepilot-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: PRIMARY_MODEL
+        value: google/gemma-4-31b-it:free
+      - key: FALLBACK_MODELS
+        value: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free,nvidia/nemotron-3.5-lightning:free,cohere/north-mini-code:free
+      - key: OPENROUTER_API_KEY
+        sync: false
